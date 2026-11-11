@@ -4,6 +4,7 @@ import {
   doc,
   setDoc,
   getDoc,
+  getDocFromServer,
   deleteDoc,
   onSnapshot,
   collection,
@@ -41,87 +42,6 @@ export interface SubmissionRecord {
   clientTime?: string;
 }
 
-/**
- * Save student submission directly into Firestore (no Google Apps Script needed)
- */
-export async function saveSubmissionToFirestore(p: any): Promise<{ success: boolean; id: string; error?: string }> {
-  try {
-    const rawId = p.submissionId || `sub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    // Clean id to match Firestore rules ^[a-zA-Z0-9_\-]+$
-    const cleanId = rawId.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 100);
-    const subRef = doc(db, 'submissions', cleanId);
-
-    const data: SubmissionRecord = {
-      id: cleanId,
-      studentName: String(p.identity?.name || 'Anonim').slice(0, 100),
-      className: String(p.identity?.className || 'XI TAV').slice(0, 50),
-      group: String(p.identity?.group || '').slice(0, 20),
-      kind: p.kind || 'lkpd',
-      submittedAt: Date.now(),
-      quizScore: p.quiz?.score !== undefined ? Number(p.quiz.score) : null,
-      letter: String(p.letter || '').slice(0, 8000),
-      answers: p.answers || {},
-      poll: String(p.poll || ''),
-      games: p.games || {},
-      arcade: p.arcade || {},
-      checklist: p.checklist || {},
-      clientTime: p.clientTime || new Date().toISOString()
-    };
-
-    await setDoc(subRef, data, { merge: true });
-    return { success: true, id: cleanId };
-  } catch (err: any) {
-    console.error('Firestore submission error:', err);
-    return { success: false, id: '', error: err.message || 'Gagal menyimpan ke database' };
-  }
-}
-
-/**
- * Listen to real-time student submissions for the teacher desk
- */
-export function subscribeToSubmissions(
-  callback: (submissions: SubmissionRecord[]) => void,
-  onError?: (err: any) => void
-) {
-  const colRef = collection(db, 'submissions');
-  const q = query(colRef, limit(100));
-
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const items: SubmissionRecord[] = [];
-      snapshot.forEach((d) => {
-        const item = d.data() as SubmissionRecord;
-        items.push({ ...item, id: d.id });
-      });
-      // Sort newest first
-      items.sort((a, b) => (b.submittedAt || 0) - (a.submittedAt || 0));
-      callback(items);
-    },
-    (err) => {
-      console.warn('Submissions listener error:', err);
-      if (onError) onError(err);
-    }
-  );
-}
-
-/**
- * Delete a submission (teacher only)
- */
-export async function deleteSubmissionFromFirestore(id: string) {
-  try {
-    const subRef = doc(db, 'submissions', id);
-    await deleteDoc(subRef);
-    return true;
-  } catch (err) {
-    console.error('Failed to delete submission:', err);
-    return false;
-  }
-}
-
-/**
- * Battle Room State Types
- */
 export interface BattleGroup {
   id: number;
   name: string;
@@ -172,6 +92,99 @@ export interface BattleRoomData {
 }
 
 /**
+ * Validate Connection to Firestore (Skill Requirement)
+ */
+export async function testConnection(): Promise<boolean> {
+  try {
+    await getDocFromServer(doc(db, 'settings', 'active_battle'));
+    return true;
+  } catch (error: any) {
+    if (error?.message?.includes('the client is offline')) {
+      console.error("Please check your Firebase configuration or internet connection.");
+      return false;
+    }
+    // Document might not exist yet, but server answered:
+    return true;
+  }
+}
+
+/**
+ * Save student submission directly into Firestore
+ */
+export async function saveSubmissionToFirestore(p: any): Promise<{ success: boolean; id: string; error?: string }> {
+  try {
+    const rawId = p.submissionId || `sub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const cleanId = rawId.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 100);
+    const subRef = doc(db, 'submissions', cleanId);
+
+    const data: SubmissionRecord = {
+      id: cleanId,
+      studentName: String(p.identity?.name || 'Anonim').slice(0, 100),
+      className: String(p.identity?.className || 'XI TAV').slice(0, 50),
+      group: String(p.identity?.group || '').slice(0, 20),
+      kind: p.kind || 'lkpd',
+      submittedAt: Date.now(),
+      quizScore: p.quiz?.score !== undefined ? Number(p.quiz.score) : null,
+      letter: String(p.letter || '').slice(0, 8000),
+      answers: p.answers || {},
+      poll: String(p.poll || ''),
+      games: p.games || {},
+      arcade: p.arcade || {},
+      checklist: p.checklist || {},
+      clientTime: p.clientTime || new Date().toISOString()
+    };
+
+    await setDoc(subRef, data, { merge: true });
+    return { success: true, id: cleanId };
+  } catch (err: any) {
+    console.error('Firestore submission error:', err);
+    return { success: false, id: '', error: err.message || 'Gagal menyimpan ke database' };
+  }
+}
+
+/**
+ * Listen to real-time student submissions for the teacher desk
+ */
+export function subscribeToSubmissions(
+  callback: (submissions: SubmissionRecord[]) => void,
+  onError?: (err: any) => void
+) {
+  const colRef = collection(db, 'submissions');
+  const q = query(colRef, limit(100));
+
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const items: SubmissionRecord[] = [];
+      snapshot.forEach((d) => {
+        const item = d.data() as SubmissionRecord;
+        items.push({ ...item, id: d.id });
+      });
+      items.sort((a, b) => (b.submittedAt || 0) - (a.submittedAt || 0));
+      callback(items);
+    },
+    (err) => {
+      console.warn('Submissions listener error:', err);
+      if (onError) onError(err);
+    }
+  );
+}
+
+/**
+ * Delete a submission (teacher only)
+ */
+export async function deleteSubmissionFromFirestore(id: string) {
+  try {
+    const subRef = doc(db, 'submissions', id);
+    await deleteDoc(subRef);
+    return true;
+  } catch (err) {
+    console.error('Failed to delete submission:', err);
+    return false;
+  }
+}
+
+/**
  * Save/update room in Firestore
  */
 export async function updateBattleRoom(room: BattleRoomData) {
@@ -181,6 +194,16 @@ export async function updateBattleRoom(room: BattleRoomData) {
     updatedAt: Date.now(),
     rev: (room.rev || 0) + 1
   }, { merge: true });
+
+  // Broadcast this as the active class room
+  try {
+    await setDoc(doc(db, 'settings', 'active_battle'), {
+      activeRoomCode: room.code,
+      updatedAt: Date.now()
+    }, { merge: true });
+  } catch (e) {
+    console.warn('Failed to broadcast active battle room:', e);
+  }
 }
 
 /**
@@ -216,5 +239,22 @@ export function subscribeToBattleRoom(
     }
   }, (err) => {
     console.warn('Battle room listener error:', err);
+  });
+}
+
+/**
+ * Listen to currently active battle room code broadcasted by teacher
+ */
+export function subscribeToActiveBattleCode(callback: (code: string) => void) {
+  const activeRef = doc(db, 'settings', 'active_battle');
+  return onSnapshot(activeRef, (snap) => {
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data?.activeRoomCode) {
+        callback(String(data.activeRoomCode));
+      }
+    }
+  }, (err) => {
+    console.warn('Active battle code listener error:', err);
   });
 }

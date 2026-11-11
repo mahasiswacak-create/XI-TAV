@@ -12,7 +12,8 @@ service cloud.firestore {
 
     // Battle Rooms collection: Live interactive classroom battle
     match /battle_rooms/{roomId} {
-      allow get, list: if isValidId(roomId);
+      allow get: if isValidId(roomId);
+      allow list: if true;
       allow create: if isValidId(roomId)
         && request.resource.data.keys().hasAll(['code', 'phase', 'qIndex', 'groups', 'createdAt', 'updatedAt'])
         && request.resource.data.code is string && request.resource.data.code.size() == 6
@@ -29,7 +30,8 @@ service cloud.firestore {
 
     // Student Submissions collection (LKPD, Quiz, Final Letters)
     match /submissions/{submissionId} {
-      allow get, list: if isValidId(submissionId);
+      allow get: if isValidId(submissionId);
+      allow list: if true;
       allow create: if isValidId(submissionId)
         && request.resource.data.keys().hasAll(['studentName', 'className', 'kind', 'submittedAt'])
         && request.resource.data.studentName is string && request.resource.data.studentName.size() <= 100
@@ -43,11 +45,9 @@ service cloud.firestore {
 
     // Teacher Settings & Class Configuration
     match /settings/{configId} {
-      allow get, list: if isValidId(configId);
-      allow create, update: if isValidId(configId)
-        && request.resource.data.keys().hasAll(['passHash', 'updatedAt'])
-        && request.resource.data.passHash is string && request.resource.data.passHash.size() <= 128
-        && request.resource.data.updatedAt is number;
+      allow get: if isValidId(configId);
+      allow list: if true;
+      allow create, update: if isValidId(configId);
       allow delete: if isValidId(configId);
     }
   }

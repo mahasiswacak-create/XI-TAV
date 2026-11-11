@@ -3,6 +3,9 @@ import {
   saveSubmissionToFirestore,
   subscribeToSubmissions,
   deleteSubmissionFromFirestore,
+  subscribeToBattleRoom,
+  subscribeToActiveBattleCode,
+  testConnection,
   SubmissionRecord,
   BattleRoomData
 } from './firebase-service';
@@ -11,10 +14,8 @@ import {
   createNewRoom,
   executeRoomAction,
   attemptText,
-  checkAnswerMatch,
   getQuestionKey,
-  updateBattleRoom,
-  subscribeToBattleRoom
+  updateBattleRoom
 } from './battle-engine';
 import confetti from 'canvas-confetti';
 
@@ -32,6 +33,7 @@ const D = window.LESSON;
 const STORAGE_KEY = 'al-lab-tav-electronics-v6';
 const TEACHER_PIN_KEY = 'al-teacher-pin-v6';
 const TEACHER_AUTH_KEY = 'al-teacher-auth-v6';
+const CLIENT_BATTLE_KEY = 'al-client-battle-session-v6';
 
 const defaultState = () => ({
   identity: { name: '', className: 'XI TAV', group: '' },
@@ -74,16 +76,47 @@ let liveSubmissions: SubmissionRecord[] = [];
 let submissionFilter: 'all' | 'lkpd' | 'quiz' | 'final' = 'all';
 let submissionSearch = '';
 let activeSubmissionModal: SubmissionRecord | null = null;
-let unsubscribeSubmissions: (() => void) | null = null;
+let firestoreOnline = true;
 
 // Battle state
 let currentRoomCode = localStorage.getItem('al-active-room') || '246810';
 let activeRoom: BattleRoomData | null = null;
 let unsubscribeRoom: (() => void) | null = null;
 let battleRole: 'host' | 'team' | 'display' = 'team';
-let currentTeamId = 1;
-let currentTeamPin = '';
-let currentMembers = ['', '', '', ''];
+
+interface ClientBattleSession {
+  roomCode: string;
+  groupId: number | null;
+  pin: string;
+  members: string[];
+  isJoined: boolean;
+}
+
+let clientSession: ClientBattleSession;
+try {
+  clientSession = JSON.parse(sessionStorage.getItem(CLIENT_BATTLE_KEY) || 'null') || {
+    roomCode: currentRoomCode,
+    groupId: null,
+    pin: '',
+    members: ['', '', '', ''],
+    isJoined: false
+  };
+} catch {
+  clientSession = {
+    roomCode: currentRoomCode,
+    groupId: null,
+    pin: '',
+    members: ['', '', '', ''],
+    isJoined: false
+  };
+}
+
+function saveClientSession() {
+  try {
+    sessionStorage.setItem(CLIENT_BATTLE_KEY, JSON.stringify(clientSession));
+  } catch {}
+}
+
 let battleChoice: number | null = null;
 let battleOrder: string[] = [];
 let battleTextAnswer = '';
@@ -235,7 +268,7 @@ function quiz() {
     save();
     return (
       heading('QUIZ RESULTS', 'You made progress.') +
-      `<div class="card"><div class="stat">${score}<small>/100</small></div><h2>${score >= 80 ? 'Target pengetahuan tercapai!' : 'Pelajari kembali bagian yang masih sulit.'}</h2><p>Skor kuis ini otomatis tersimpan ke Dashboard Guru saat kamu menekan tombol Kirim.</p><div class="actions"><button class="primary" data-action="quiz-reset">Ulangi kuis</button><a class="button" href="#final">Tantangan akhir →</a></div><h3>Tinjau jawaban</h3>${D.quiz.map((q: any, i: number) => `<details class="letter-part"><summary>${i + 1}. ${quizAnswers[i] === q.key ? 'Benar (+10)' : 'Perlu ditinjau'} · ${q.topic}</summary><p>${esc(q.q)}</p><p>Jawabanmu: ${esc(q.options[quizAnswers[i]])}</p><p><strong>Kunci: ${esc(q.options[q.key])}</strong></p><p>${q.why}</p></details>`).join('')}</div>${submissionPanel('quiz')}`
+      `<div class="card"><div class="stat">${score}<small>/100</small></div><h2>${score >= 80 ? 'Target pengetahuan tercapai!' : 'Pelajari kembali bagian yang masih sulit.'}</h2><p>Skor kuis ini otomatis tersimpan ke Database Guru saat kamu menekan tombol Kirim.</p><div class="actions"><button class="primary" data-action="quiz-reset">Ulangi kuis</button><a class="button" href="#final">Tantangan akhir →</a></div><h3>Tinjau jawaban</h3>${D.quiz.map((q: any, i: number) => `<details class="letter-part"><summary>${i + 1}. ${quizAnswers[i] === q.key ? 'Benar (+10)' : 'Perlu ditinjau'} · ${q.topic}</summary><p>${esc(q.q)}</p><p>Jawabanmu: ${esc(q.options[quizAnswers[i]])}</p><p><strong>Kunci: ${esc(q.options[q.key])}</strong></p><p>${q.why}</p></details>`).join('')}</div>${submissionPanel('quiz')}`
     );
   }
   const q = D.quiz[quizIndex];
@@ -381,12 +414,16 @@ async function submit(kind: 'lkpd' | 'quiz' | 'final') {
 
   const res = await saveSubmissionToFirestore(p);
   if (res.success) {
-    confetti({ particleCount: 40, spread: 60 });
+    confetti({ particleCount: 50, spread: 70 });
     toast('Berhasil dikirim ke Database Guru!');
     if (statusEl) {
-      statusEl.innerHTML = `<div class="feedback good"><strong>Tersimpan di Database Guru!</strong><br>Nomor Bukti Tugas: <strong>${esc(
-        res.id
-      )}</strong><br>Waktu: ${new Date().toLocaleTimeString('id-ID')} WIB. Guru dapat langsung meninjau jawabanmu di panel guru.</div>`;
+      statusEl.innerHTML = `<div class="feedback good" style="border-left:4px solid #65c7a2;">
+        <strong>✓ Berhasil Tersimpan di Database Guru!</strong><br>
+        Nama: <strong>${esc(state.identity.name)}</strong> (${esc(state.identity.className)})<br>
+        Nomor Bukti Tugas: <strong>${esc(res.id)}</strong><br>
+        Waktu: ${new Date().toLocaleTimeString('id-ID')} WIB.<br>
+        <em>Guru dapat langsung memeriksa tugas ini secara real-time dari Panel Guru.</em>
+      </div>`;
     }
   } else {
     toast('Gagal mengirim ke database.');
@@ -398,7 +435,9 @@ async function submit(kind: 'lkpd' | 'quiz' | 'final') {
   }
 }
 
-// BATTLE SUBSCRIPTION
+// ==========================================
+// BATTLE SUBSCRIPTION & REAL-TIME SYNC
+// ==========================================
 function setupBattleSync() {
   if (unsubscribeRoom) {
     unsubscribeRoom();
@@ -418,9 +457,7 @@ function setupBattleSync() {
   }
 
   unsubscribeRoom = subscribeToBattleRoom(currentRoomCode, (room) => {
-    if (room) {
-      activeRoom = room;
-    }
+    activeRoom = room;
     const route = location.hash.slice(1) || 'home';
     if (route === 'battle' || (route === 'guru' && teacherTab === 'battle')) {
       render();
@@ -438,12 +475,15 @@ function battlePage() {
   return (
     heading('CLASSROOM LIVE', 'Application Letter Battle.', 'Delapan kelompok berlomba secara real-time. Guru mengendalikan pembukaan rebut, timer, dan penilaian.') +
     `<div class="card battle-wrap">
-      <div class="top-bar-battle" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:18px;">
-        <div style="display:flex;align-items:center;gap:12px;">
+      <div class="top-bar-battle" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid #ffffff18;">
+        <div style="display:flex;align-items:center;gap:14px;">
           <span class="monogram">AL</span>
           <div>
-            <strong>Room: <code style="font-size:20px;letter-spacing:3px;color:var(--mint);">${currentRoomCode}</code></strong>
-            <small class="muted" style="display:block;">${isDemoMode ? 'Mode Simulasi Mandiri' : 'Terkoneksi Real-time Firestore'}</small>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="micro" style="font-weight:bold;">KODE RUANG AKTIF:</span>
+              <strong style="font-size:22px;letter-spacing:4px;color:var(--mint);font-family:monospace;">${currentRoomCode}</strong>
+            </div>
+            <small class="muted" style="display:block;">${isDemoMode ? 'Mode Simulasi Mandiri' : 'Terkoneksi Real-time Firestore (Multi-device)'}</small>
           </div>
         </div>
         <div class="actions" style="margin:0;">
@@ -460,11 +500,19 @@ function battlePage() {
 
 function renderBattleStage(room: BattleRoomData | null, q: any) {
   if (!room) {
-    return `<div class="lobby" style="text-align:center;padding:35px 20px;">
-      <h2>Ruang Battle ${currentRoomCode} belum dibuat</h2>
-      <p class="muted">Guru dapat membuat ruang baru dengan 1 klik dari Panel Guru.</p>
+    return `<div class="lobby" style="text-align:center;padding:40px 20px;">
+      <span class="micro">STATUS RUANG</span>
+      <h2 style="margin-top:10px;">Ruang Battle ${esc(currentRoomCode)} Belum Aktif</h2>
+      <p class="muted" style="max-width:550px;margin:10px auto 20px;">Jika Anda <strong>Guru</strong>, tekan tombol di bawah untuk membuat ruang. Jika Anda <strong>Siswa</strong>, masukkan kode ruang yang diberikan oleh guru Anda.</p>
+      <div style="max-width:380px;margin:0 auto 20px;">
+        <label for="change-room-code-input" style="font-size:12px;">Masukkan Kode Ruang dari Guru:</label>
+        <div style="display:flex;gap:8px;">
+          <input id="change-room-code-input" value="${esc(currentRoomCode)}" placeholder="6 Angka Kode Ruang" maxlength="6" style="letter-spacing:4px;font-weight:bold;font-size:18px;text-align:center;">
+          <button class="primary" data-action="connect-room-code">Hubungkan</button>
+        </div>
+      </div>
       <div class="actions" style="justify-content:center;">
-        <button class="primary" data-action="init-battle-room">Buat Ruang Battle Sekarang</button>
+        <button class="primary" data-action="init-battle-room">Buat Ruang ${esc(currentRoomCode)} Baru (Guru)</button>
         <a class="button" href="#guru">Buka Panel Guru →</a>
       </div>
     </div>`;
@@ -478,7 +526,7 @@ function renderBattleStage(room: BattleRoomData | null, q: any) {
 
   if (room.phase === 'lobby') {
     phaseText = 'Menunggu guru menampilkan soal';
-    phaseSub = 'Siapkan anggota pertama dan satu HP per kelompok.';
+    phaseSub = 'Siapkan satu HP per kelompok dan masukkan nama anggota.';
   } else if (room.phase === 'reading' || room.phase === 'ready') {
     const readLeft = Math.max(0, Math.ceil((room.readDeadline - Date.now()) / 1000));
     phaseText = readLeft > 0 ? `Waktu membaca: ${readLeft}s` : 'Waktu membaca selesai';
@@ -517,11 +565,11 @@ function renderBattleStage(room: BattleRoomData | null, q: any) {
   const questionBox = `<div class="card stage" style="min-height:360px;">
     ${
       room.phase === 'lobby'
-        ? `<div class="lobby" style="text-align:center;padding:40px 10px;">
+        ? `<div class="lobby" style="text-align:center;padding:35px 10px;">
             <span class="micro">KODE RUANG BATTLE</span>
-            <div class="big-room" style="font-size:46px;letter-spacing:6px;color:var(--mint);">${room.code}</div>
+            <div class="big-room" style="font-size:48px;letter-spacing:6px;color:var(--mint);font-family:monospace;">${room.code}</div>
             <h2 style="margin-top:20px;">Ready for Classroom Battle</h2>
-            <p class="muted">Tunggu seluruh kelompok bergabung dengan PIN masing-masing.</p>
+            <p class="muted">Tunggu seluruh 8 kelompok bergabung dengan PIN masing-masing.</p>
             <span class="tag">${room.groups.filter((g) => g.joined).length} dari 8 Kelompok Terhubung</span>
           </div>`
         : `<div class="question-meta"><span class="micro">SOAL ${room.qIndex + 1} / ${BATTLE_QUESTIONS.length}</span><span class="micro">${esc(q.category)}</span></div>
@@ -541,7 +589,7 @@ function renderBattleStage(room: BattleRoomData | null, q: any) {
     }
   </div>`;
 
-  // Right Side: Team view or Teacher view
+  // Right Side: Team view, Teacher view, or Projector
   let sidePanel = '';
   if (battleRole === 'host') {
     sidePanel = renderTeacherControlPanel(room, q);
@@ -562,7 +610,7 @@ function renderBattleStage(room: BattleRoomData | null, q: any) {
   // Scores
   const sorted = [...room.groups].sort((a, b) => b.score - a.score);
   const scoreGrid = `<section class="scores">
-    <div class="scores-title"><h2>Papan Skor 8 Kelompok</h2><small>${isDemoMode ? 'Simulasi' : 'Live Real-time'}</small></div>
+    <div class="scores-title"><h2>Papan Skor 8 Kelompok</h2><small>${isDemoMode ? 'Simulasi Offline' : 'Live Real-time'}</small></div>
     <div class="score-grid">
       ${sorted
         .map(
@@ -582,7 +630,6 @@ function renderBattleStage(room: BattleRoomData | null, q: any) {
 }
 
 function renderTeacherControlPanel(room: BattleRoomData, q: any) {
-  const isAnswering = room.phase === 'answering';
   const c = room.current;
 
   return `<aside class="card controls">
@@ -645,45 +692,58 @@ function renderTeacherControlPanel(room: BattleRoomData, q: any) {
     </details>
     <div class="actions" style="margin-top:12px;">
       <button data-action="export-battle-csv">Unduh CSV Skor</button>
-      <button data-action="reset-all-battle">Reset Skor</button>
+      <button data-action="init-battle-room">Reset Permainan</button>
     </div>
   </aside>`;
 }
 
 function renderTeamInteractionPanel(room: BattleRoomData, q: any) {
-  const grp = room.groups.find((g) => g.id === currentTeamId);
-  const isMyTurn = room.current?.groupId === currentTeamId;
+  const isMyDeviceJoined = clientSession.isJoined && clientSession.groupId !== null && clientSession.roomCode === room.code;
+  const myGrp = isMyDeviceJoined ? room.groups.find((g) => g.id === clientSession.groupId) : null;
+  const isMyTurn = isMyDeviceJoined && room.current?.groupId === clientSession.groupId;
 
-  if (!grp?.joined) {
+  // If this device hasn't joined, ALWAYS render the group selection and PIN input!
+  if (!isMyDeviceJoined || !myGrp) {
+    const selectedGid = clientSession.groupId || 1;
+    const currentGrpInfo = room.groups.find((x) => x.id === selectedGid);
     return `<aside class="card">
-      <span class="micro">GABUNG BATTLE</span>
+      <span class="micro">GABUNG BATTLE KELAS</span>
       <h2 style="margin-top:9px;">Masuk Kelompok</h2>
-      <label for="team-select">Pilih Kelompok:</label>
-      <select id="team-select">
-        ${room.groups.map((g) => `<option value="${g.id}" ${g.id === currentTeamId ? 'selected' : ''}>${esc(g.name)} ${g.joined ? '(Aktif)' : ''}</option>`).join('')}
-      </select>
-      <label for="pin-input">PIN Kelompok dari Guru:</label>
-      <input id="pin-input" placeholder="6 Karakter PIN" value="${esc(currentTeamPin)}" style="text-transform:uppercase;">
-      <label>4 Nama Panggilan Anggota:</label>
-      <div class="members">
-        ${[0, 1, 2, 3].map((i) => `<input id="member-${i}" placeholder="Anggota ${i + 1}" value="${esc(currentMembers[i] || '')}">`).join('')}
+      <div style="margin-bottom:12px;">
+        <label for="student-room-code" style="font-size:11px;">Kode Ruang dari Guru:</label>
+        <div style="display:flex;gap:6px;">
+          <input id="student-room-code" value="${esc(currentRoomCode)}" placeholder="6 Angka" maxlength="6" style="letter-spacing:3px;font-weight:bold;font-family:monospace;text-align:center;">
+          <button data-action="connect-room-code" style="padding:0 12px;min-height:44px;">Ganti</button>
+        </div>
       </div>
-      <div class="actions" style="margin-top:14px;">
+      <label for="team-select">Pilih Kelompok Kamu:</label>
+      <select id="team-select">
+        ${room.groups.map((g) => `<option value="${g.id}" ${g.id === selectedGid ? 'selected' : ''}>${esc(g.name)} ${g.joined ? '(Aktif)' : '(Tersedia)'}</option>`).join('')}
+      </select>
+      <label for="pin-input">PIN Kelompok (dari Guru):</label>
+      <input id="pin-input" placeholder="Masukkan PIN (Default: ${currentGrpInfo?.pin || 1000 + selectedGid})" value="${esc(clientSession.pin)}" style="text-transform:uppercase;letter-spacing:3px;font-family:monospace;font-size:16px;">
+      <small class="muted" style="display:block;margin-top:4px;">PIN Kelompok ${selectedGid}: <code>${esc(currentGrpInfo?.pin || 1000 + selectedGid)}</code></small>
+      <label style="margin-top:12px;">Nama 4 Anggota Kelompok:</label>
+      <div class="members">
+        ${[0, 1, 2, 3].map((i) => `<input id="member-${i}" placeholder="Anggota ${i + 1}" value="${esc(clientSession.members[i] || '')}">`).join('')}
+      </div>
+      <div class="actions" style="margin-top:16px;">
         <button class="primary" data-action="team-join" style="width:100%;">Masuk Ruang Battle</button>
       </div>
     </aside>`;
   }
 
-  // If joined, show buzzer or answering form
+  // DEVICE IS JOINED! Show team badge, members, and buzzer / answer form
   return `<aside class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;">
-      <span class="micro">${esc(grp.name)}</span>
-      <span class="tag" style="font-size:9px;">Poin: ${grp.score}</span>
+      <span class="micro">${esc(myGrp.name)} (Room ${currentRoomCode})</span>
+      <span class="tag" style="font-size:10px;font-weight:bold;">Skor: ${myGrp.score}</span>
     </div>
-    <p class="respondent">Giliran menjawab: <strong>${esc(grp.members.length ? grp.members[grp.turn % grp.members.length] : 'Siap')}</strong></p>
+    <p class="respondent" style="margin:10px 0 4px;">Penjawab saat ini: <strong>${esc(myGrp.members.length ? myGrp.members[myGrp.turn % myGrp.members.length] : 'Siap')}</strong></p>
+    <small class="muted" style="display:block;text-align:center;margin-bottom:12px;">Anggota: ${esc(myGrp.members.join(', '))}</small>
     ${
       isMyTurn && room.phase === 'answering'
-        ? `<div class="answer-form" style="margin-top:14px;">
+        ? `<div class="answer-form" style="margin-top:10px;">
             <h3>Kirim Jawaban Kelompokmu:</h3>
             ${
               q.type === 'choice'
@@ -698,13 +758,22 @@ function renderTeamInteractionPanel(room: BattleRoomData, q: any) {
               <button class="primary" data-battle-action="submit-answer" style="width:100%;">Kirim Jawaban</button>
             </div>
           </div>`
+        : isMyTurn && room.phase === 'review'
+        ? `<div class="response">
+            <strong>Jawaban Terkirim</strong>
+            <p>${esc(attemptText(room.current, q) || 'Waktu habis tanpa jawaban.')}</p>
+            <small class="muted">Tunggu keputusan guru. Jelaskan alasan secara lisan.</small>
+          </div>`
         : `<div class="buzz-wrap">
-            <button class="buzzer ${room.phase === 'open' && !room.tried.includes(currentTeamId) ? 'live' : ''}" id="buzz-btn" data-battle-action="buzz" ${room.phase === 'open' && !room.tried.includes(currentTeamId) ? '' : 'disabled'}>
+            <button class="buzzer ${room.phase === 'open' && !room.tried.includes(clientSession.groupId!) ? 'live' : ''}" id="buzz-btn" data-battle-action="buzz" ${room.phase === 'open' && !room.tried.includes(clientSession.groupId!) ? '' : 'disabled'}>
               <span>REBUT</span>
-              <small>${room.phase === 'open' ? (room.tried.includes(currentTeamId) ? 'Sudah mencoba' : 'Tekan Sekarang!') : 'Tunggu Guru Membuka'}</small>
+              <small>${room.phase === 'open' ? (room.tried.includes(clientSession.groupId!) ? 'Sudah mencoba' : 'Tekan Sekarang!') : 'Tunggu Guru Membuka'}</small>
             </button>
           </div>`
     }
+    <div style="text-align:center;margin-top:18px;border-top:1px solid #ffffff14;padding-top:12px;">
+      <button data-action="leave-team" class="linklike" style="color:#ffb5a6;font-size:11px;">← Keluar / Ganti Kelompok Lain</button>
+    </div>
   </aside>`;
 }
 
@@ -737,7 +806,14 @@ function guru() {
   // TEACHER DASHBOARD CONTENT
   return (
     heading('TEACHER DESK', 'Welcome, Teacher.', 'Semua kontrol LKPD, Kuis, Game, dan Classroom Battle terintegrasi langsung di sini tanpa Google Apps Script.') +
-    `<div class="tabs" role="group" aria-label="Menu Guru" style="margin-bottom:20px;">
+    `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
+      <span class="tag" style="background:${firestoreOnline ? '#18473e' : '#472218'};color:#ddf8f0;font-size:11px;">
+        <i class="status-dot" style="background:${firestoreOnline ? '#b6ffd6' : '#ffa58d'};"></i>
+        ${firestoreOnline ? 'Firebase Firestore: Terhubung & Siap' : 'Status: Offline'}
+      </span>
+      <span class="muted" style="font-size:11px;">Total Pengumpulan Masuk: <strong>${liveSubmissions.length}</strong></span>
+    </div>
+    <div class="tabs" role="group" aria-label="Menu Guru" style="margin-bottom:20px;">
       <button data-teacher-tab="battle" aria-pressed="${teacherTab === 'battle'}">Classroom Battle Host</button>
       <button data-teacher-tab="submissions" aria-pressed="${teacherTab === 'submissions'}">Rekap Pengumpulan Siswa (${liveSubmissions.length})</button>
       <button data-teacher-tab="settings" aria-pressed="${teacherTab === 'settings'}">Pengaturan & Panduan</button>
@@ -753,24 +829,24 @@ function renderTeacherBattleTab() {
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
       <div>
         <span class="pill">REAL-TIME MULTI-DEVICE BATTLE</span>
-        <h2 style="margin:6px 0 0;">Ruang Battle: <code style="color:var(--mint);font-size:26px;">${currentRoomCode}</code></h2>
-        <small class="muted">Siswa mengakses menu "Battle" dan memasukkan kode ini beserta PIN kelompok.</small>
+        <h2 style="margin:6px 0 0;">Ruang Battle: <code style="color:var(--mint);font-size:26px;letter-spacing:3px;">${currentRoomCode}</code></h2>
+        <small class="muted">Kode ruang ini otomatis disiarkan ke seluruh perangkat siswa.</small>
       </div>
       <div class="actions" style="margin:0;">
         <button class="primary" data-action="init-battle-room">Buat / Reset Ruang Baru</button>
-        <a class="button" href="#battle" data-battle-role="host">Buka Layar Penuh Battle →</a>
+        <a class="button" href="#battle" data-battle-role="host">Buka Kendali Soal & Rebut →</a>
       </div>
     </div>
     ${
       room
         ? `<h3>Daftar PIN 8 Kelompok</h3>
-          <p class="muted">Berikan PIN berikut kepada masing-masing perwakilan kelompok untuk masuk ke permainan:</p>
+          <p class="muted">Guru dapat mengubah PIN kelompok secara langsung di bawah, lalu klik "Simpan":</p>
           <div style="overflow-x:auto;">
             <table class="pins">
               <thead>
                 <tr>
                   <th style="text-align:left;padding:8px;">Kelompok</th>
-                  <th style="text-align:left;padding:8px;">PIN Masuk</th>
+                  <th style="text-align:left;padding:8px;">PIN Masuk (Bisa Diubah)</th>
                   <th style="text-align:left;padding:8px;">Status Sambungan</th>
                   <th style="text-align:left;padding:8px;">Skor</th>
                   <th style="text-align:left;padding:8px;">Aksi</th>
@@ -781,17 +857,22 @@ function renderTeacherBattleTab() {
                   .map(
                     (g) => `<tr>
                       <td><strong>${esc(g.name)}</strong></td>
-                      <td><code>${esc(g.pin)}</code></td>
-                      <td>${g.joined ? '<span class="status-dot" style="display:inline-block;margin-right:5px;"></span>Terhubung (' + g.members.join(', ') + ')' : '<span class="muted">Belum gabung</span>'}</td>
+                      <td>
+                        <div style="display:flex;align-items:center;gap:6px;">
+                          <input id="pin-edit-${g.id}" value="${esc(g.pin)}" style="width:90px;padding:5px 8px;min-height:34px;font-family:monospace;letter-spacing:2px;font-weight:bold;text-align:center;">
+                          <button data-action="save-pin" data-group-id="${g.id}" style="padding:4px 8px;min-height:34px;font-size:11px;">Simpan</button>
+                        </div>
+                      </td>
+                      <td>${g.joined ? '<span class="status-dot" style="display:inline-block;margin-right:5px;background:#b6ffd6;"></span>Terhubung (' + g.members.join(', ') + ')' : '<span class="muted">Belum gabung</span>'}</td>
                       <td><strong style="color:var(--mint);font-size:16px;">${g.score}</strong></td>
-                      <td><button data-action="reset-single-pin" data-group-id="${g.id}">Reset PIN</button></td>
+                      <td><button data-action="reset-single-pin" data-group-id="${g.id}">Reset</button></td>
                     </tr>`
                   )
                   .join('')}
               </tbody>
             </table>
           </div>`
-        : `<p class="muted">Tekan "Buat / Reset Ruang Baru" untuk menginisialisasi 8 kelompok dan PIN otomatis.</p>`
+        : `<p class="muted">Ruang belum dibuat. Tekan tombol <strong>"Buat / Reset Ruang Baru"</strong> di atas untuk mengaktifkan kode ${currentRoomCode} di Firestore.</p>`
     }
   </div>`;
 }
@@ -810,7 +891,7 @@ function renderTeacherSubmissionsTab() {
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
       <div>
         <span class="pill">FIRESTORE PERSISTENT STORAGE</span>
-        <h2 style="margin:6px 0 0;">Rekap Pengumpulan Digital</h2>
+        <h2 style="margin:6px 0 0;">Rekap Pengumpulan Digital (${liveSubmissions.length})</h2>
         <small class="muted">Data tersinkron otomatis saat siswa mengklik tombol Kirim.</small>
       </div>
       <div class="actions" style="margin:0;">
@@ -924,7 +1005,12 @@ function renderTeacherSettingsTab() {
       </div>
       <div>
         <label>Status Sistem Pembelajaran:</label>
-        <p class="muted">✓ Netlify SPA Ready (_redirects aktif)<br>✓ Firebase Firestore Terkoneksi<br>✓ Apps Script Tidak Diperlukan Lagi<br>✓ Multi-device Classroom Battle Aktif</p>
+        <p class="muted">
+          ✓ Cloudflare Pages / Netlify SPA Ready<br>
+          ✓ Firebase Firestore Terkoneksi (${firestoreOnline ? 'Online' : 'Offline'})<br>
+          ✓ Apps Script Dihilangkan (100% Menggunakan Database Langsung)<br>
+          ✓ Multi-device Classroom Battle Aktif
+        </p>
       </div>
     </div>
   </div>`;
@@ -1036,19 +1122,6 @@ function render(focus = false) {
   }
 }
 
-function feedback(text: string, good: boolean) {
-  const el = $('#game-feedback');
-  if (el) {
-    el.innerHTML = `<div class="feedback ${good ? 'good' : 'bad'}">${text}</div>`;
-    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }
-  if (good) {
-    state.games[gameTab] = true;
-    save();
-    updateProgress();
-  }
-}
-
 // ==========================================
 // EVENT LISTENERS (CLICKS, INPUTS, CHANGES)
 // ==========================================
@@ -1087,6 +1160,13 @@ document.addEventListener('input', (e) => {
 document.addEventListener('change', (e) => {
   const t = e.target as HTMLInputElement;
   if (!t) return;
+  if (t.id === 'team-select' && activeRoom) {
+    const selectedGid = Number(t.value);
+    clientSession.groupId = selectedGid;
+    saveClientSession();
+    render();
+    return;
+  }
   for (const k of ['match', 'mistake', 'expression']) {
     if (t.dataset[k] !== undefined) {
       state.form[k + t.dataset[k]] = t.value;
@@ -1254,12 +1334,39 @@ document.addEventListener('click', async (e) => {
     render();
     return;
   }
+  if (action === 'connect-room-code') {
+    const input = ($('#student-room-code') || $('#change-room-code-input')) as HTMLInputElement;
+    const newCode = (input?.value || '').trim();
+    if (newCode.length !== 6) {
+      return toast('Kode ruang harus 6 angka.');
+    }
+    currentRoomCode = newCode;
+    localStorage.setItem('al-active-room', newCode);
+    setupBattleSync();
+    toast(`Menghubungkan ke Ruang ${newCode}...`);
+    render();
+    return;
+  }
   if (action === 'init-battle-room') {
     const fresh = createNewRoom(currentRoomCode, 7);
     activeRoom = fresh.room;
     await updateBattleRoom(activeRoom);
-    toast(`Ruang Battle ${currentRoomCode} siap!`);
+    toast(`Ruang Battle ${currentRoomCode} berhasil dibuat dan disiarkan!`);
     render();
+    return;
+  }
+  if (action === 'save-pin') {
+    const gid = Number(t.dataset.groupId);
+    const input = $(`#pin-edit-${gid}`) as HTMLInputElement;
+    const newPin = (input?.value || '').trim().toUpperCase();
+    if (!newPin) return toast('PIN tidak boleh kosong.');
+    if (activeRoom) {
+      executeRoomAction(activeRoom, { action: 'updatePin', groupId: gid, pin: newPin });
+      await updateBattleRoom(activeRoom);
+      const grp = activeRoom.groups.find((g) => g.id === gid);
+      toast(`PIN ${grp?.name} berhasil diubah menjadi: ${newPin}`);
+      render();
+    }
     return;
   }
   if (action === 'reset-single-pin') {
@@ -1272,23 +1379,51 @@ document.addEventListener('click', async (e) => {
     }
     return;
   }
+  if (action === 'leave-team') {
+    clientSession.isJoined = false;
+    clientSession.groupId = null;
+    saveClientSession();
+    toast('Keluar dari kelompok. Silakan pilih kelompok lain.');
+    render();
+    return;
+  }
   if (action === 'team-join') {
+    const codeInput = ($('#student-room-code') as HTMLInputElement)?.value.trim();
+    if (codeInput && codeInput !== currentRoomCode) {
+      currentRoomCode = codeInput;
+      localStorage.setItem('al-active-room', codeInput);
+      setupBattleSync();
+    }
+
     const gid = Number(($('#team-select') as HTMLSelectElement)?.value || 1);
     const pin = ($('#pin-input') as HTMLInputElement)?.value.trim().toUpperCase();
-    const members = [0, 1, 2, 3].map((i) => ($(`#member-${i}`) as HTMLInputElement)?.value.trim() || `Siswa ${i + 1}`);
+    const m0 = ($('#member-0') as HTMLInputElement)?.value.trim() || 'Anggota 1';
+    const m1 = ($('#member-1') as HTMLInputElement)?.value.trim() || 'Anggota 2';
+    const m2 = ($('#member-2') as HTMLInputElement)?.value.trim() || 'Anggota 3';
+    const m3 = ($('#member-3') as HTMLInputElement)?.value.trim() || 'Anggota 4';
+    const members = [m0, m1, m2, m3];
 
     if (!activeRoom) return toast('Ruang battle belum dibuat guru.');
     const grp = activeRoom.groups.find((g) => g.id === gid);
     if (!grp) return toast('Kelompok tidak ditemukan.');
-    if (grp.pin.toUpperCase() !== pin) return toast('PIN kelompok salah. Minta PIN kepada guru.');
+    if (grp.pin.toUpperCase() !== pin) {
+      return toast(`PIN salah! PIN untuk ${grp.name} adalah ${grp.pin}. Minta PIN kepada guru.`);
+    }
+
+    clientSession = {
+      roomCode: activeRoom.code,
+      groupId: gid,
+      pin: pin,
+      members: members,
+      isJoined: true
+    };
+    saveClientSession();
 
     grp.joined = true;
     grp.members = members;
-    currentTeamId = gid;
-    currentTeamPin = pin;
-    currentMembers = members;
     await updateBattleRoom(activeRoom);
-    toast(`Kelompok ${gid} berhasil terhubung!`);
+    confetti({ particleCount: 35, spread: 60 });
+    toast(`Berhasil bergabung sebagai ${grp.name}!`);
     render();
     return;
   }
@@ -1297,9 +1432,11 @@ document.addEventListener('click', async (e) => {
   const bAction = t.dataset.battleAction;
   if (bAction && activeRoom) {
     if (bAction === 'buzz') {
-      const res = executeRoomAction(activeRoom, { action: 'buzz', groupId: currentTeamId });
+      if (!clientSession.groupId) return toast('Pilih dan masuk kelompok terlebih dahulu.');
+      const res = executeRoomAction(activeRoom, { action: 'buzz', groupId: clientSession.groupId });
       if (res.ok) {
         await updateBattleRoom(activeRoom);
+        confetti({ particleCount: 40, spread: 60 });
         toast('Giliran kelompokmu menjawab!');
       } else {
         toast(res.message || 'Gagal merebut.');
@@ -1308,9 +1445,10 @@ document.addEventListener('click', async (e) => {
       return;
     }
     if (bAction === 'submit-answer') {
+      if (!clientSession.groupId) return toast('Pilih kelompok terlebih dahulu.');
       const q = BATTLE_QUESTIONS[activeRoom.qIndex];
       const ans = q.type === 'choice' ? battleChoice : q.type === 'text' ? battleTextAnswer : battleOrder;
-      const res = executeRoomAction(activeRoom, { action: 'answer', groupId: currentTeamId, answer: ans });
+      const res = executeRoomAction(activeRoom, { action: 'answer', groupId: clientSession.groupId, answer: ans });
       if (res.ok) {
         await updateBattleRoom(activeRoom);
         toast('Jawaban terkirim ke Guru!');
@@ -1341,6 +1479,7 @@ document.addEventListener('click', async (e) => {
       oral: !activeRoom.current?.answeredAt && !!battleOralAnswer,
       oralAnswer: battleOralAnswer
     });
+    if (isCorrect) confetti({ particleCount: 40, spread: 60 });
     battleOralAnswer = '';
     await updateBattleRoom(activeRoom);
     render();
@@ -1413,12 +1552,33 @@ if (window.Arcade?.configure) {
 }
 
 // Subscribe to real-time submissions for the teacher desk
-unsubscribeSubmissions = subscribeToSubmissions((items) => {
-  liveSubmissions = items;
-  const route = location.hash.slice(1) || 'home';
-  if (route === 'guru' && teacherTab === 'submissions') {
-    render();
+subscribeToSubmissions(
+  (items) => {
+    liveSubmissions = items;
+    const route = location.hash.slice(1) || 'home';
+    if (route === 'guru' && teacherTab === 'submissions') {
+      render();
+    }
+  },
+  (err) => {
+    console.error('Submissions subscription error:', err);
   }
+);
+
+// Subscribe to active battle code broadcast
+subscribeToActiveBattleCode((code) => {
+  if (code && code !== currentRoomCode) {
+    currentRoomCode = code;
+    localStorage.setItem('al-active-room', code);
+    setupBattleSync();
+  }
+});
+
+// Test Firestore Connection on boot (Skill Requirement)
+testConnection().then((connected) => {
+  firestoreOnline = connected;
+  const route = location.hash.slice(1) || 'home';
+  if (route === 'guru') render();
 });
 
 // Setup room sync

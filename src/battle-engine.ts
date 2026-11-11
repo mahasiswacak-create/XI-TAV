@@ -162,7 +162,7 @@ export function createNewRoom(code?: string, readSeconds = 7): { room: BattleRoo
   const groups = Array.from({ length: 8 }, (_, i) => ({
     id: i + 1,
     name: `Kelompok ${i + 1}`,
-    pin: randomStr(6),
+    pin: String(1000 + (i + 1)),
     tokenHash: '',
     joined: false,
     members: [],
@@ -245,10 +245,6 @@ export function executeRoomAction(room: BattleRoomData, p: any): { ok: boolean; 
     room.rebound = false;
     room.tried = [];
   } else if (action === 'open') {
-    const eligible = room.groups.filter((g) => g.joined && !room.tried.includes(g.id));
-    if (!eligible.length) {
-      return { ok: false, message: 'Belum ada kelompok yang berhak merebut.' };
-    }
     room.phase = 'open';
     room.openEpoch = 'epoch_' + Math.random().toString(36).slice(2, 8);
   } else if (action === 'close') {
@@ -359,9 +355,14 @@ export function executeRoomAction(room: BattleRoomData, p: any): { ok: boolean; 
   } else if (action === 'resetTeam') {
     const target = room.groups.find((g) => g.id === Number(p.groupId));
     if (target) {
-      target.pin = randomStr(6);
+      target.pin = String(1000 + target.id);
       target.joined = false;
       target.tokenHash = '';
+    }
+  } else if (action === 'updatePin') {
+    const target = room.groups.find((g) => g.id === Number(p.groupId));
+    if (target && p.pin) {
+      target.pin = String(p.pin).trim().toUpperCase().slice(0, 8);
     }
   }
 
