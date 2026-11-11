@@ -1,0 +1,6 @@
+{
+  "name": "Application Letter Lab & Battle Hub",
+  "description": "Interactive English learning portal for Audio Video Engineering (XI TAV) with protected teacher desk, real-time battle room, LKPD, and analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

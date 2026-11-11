@@ -1,0 +1,54 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net: default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Battle Rooms collection: Live interactive classroom battle
+    match /battle_rooms/{roomId} {
+      allow get, list: if isValidId(roomId);
+      allow create: if isValidId(roomId)
+        && request.resource.data.keys().hasAll(['code', 'phase', 'qIndex', 'groups', 'createdAt', 'updatedAt'])
+        && request.resource.data.code is string && request.resource.data.code.size() == 6
+        && request.resource.data.phase in ['lobby', 'reading', 'ready', 'open', 'answering', 'review', 'resolved', 'finished']
+        && request.resource.data.qIndex is number
+        && request.resource.data.groups is list && request.resource.data.groups.size() <= 10;
+      allow update: if isValidId(roomId)
+        && request.resource.data.code is string && request.resource.data.code.size() == 6
+        && request.resource.data.phase in ['lobby', 'reading', 'ready', 'open', 'answering', 'review', 'resolved', 'finished']
+        && request.resource.data.qIndex is number
+        && request.resource.data.updatedAt is number;
+      allow delete: if isValidId(roomId);
+    }
+
+    // Student Submissions collection (LKPD, Quiz, Final Letters)
+    match /submissions/{submissionId} {
+      allow get, list: if isValidId(submissionId);
+      allow create: if isValidId(submissionId)
+        && request.resource.data.keys().hasAll(['studentName', 'className', 'kind', 'submittedAt'])
+        && request.resource.data.studentName is string && request.resource.data.studentName.size() <= 100
+        && request.resource.data.className is string && request.resource.data.className.size() <= 50
+        && request.resource.data.kind in ['lkpd', 'quiz', 'final', 'backup']
+        && request.resource.data.submittedAt is number;
+      allow update: if isValidId(submissionId)
+        && request.resource.data.studentName is string && request.resource.data.studentName.size() <= 100;
+      allow delete: if isValidId(submissionId);
+    }
+
+    // Teacher Settings & Class Configuration
+    match /settings/{configId} {
+      allow get, list: if isValidId(configId);
+      allow create, update: if isValidId(configId)
+        && request.resource.data.keys().hasAll(['passHash', 'updatedAt'])
+        && request.resource.data.passHash is string && request.resource.data.passHash.size() <= 128
+        && request.resource.data.updatedAt is number;
+      allow delete: if isValidId(configId);
+    }
+  }
+}

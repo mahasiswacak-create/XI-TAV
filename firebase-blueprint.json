@@ -1,0 +1,157 @@
+{
+  "entities": {
+    "BattleRoom": {
+      "title": "BattleRoom",
+      "description": "A live interactive classroom battle game room between student groups.",
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Six-digit room code for joining",
+          "minLength": 6,
+          "maxLength": 6
+        },
+        "phase": {
+          "type": "string",
+          "description": "Current phase of the battle game",
+          "enum": ["lobby", "reading", "ready", "open", "answering", "review", "resolved", "finished"]
+        },
+        "qIndex": {
+          "type": "number",
+          "description": "Zero-based index of current question"
+        },
+        "readSeconds": {
+          "type": "number",
+          "description": "Seconds allocated for reading"
+        },
+        "readDeadline": {
+          "type": "number",
+          "description": "Timestamp when reading period ends"
+        },
+        "answerDeadline": {
+          "type": "number",
+          "description": "Timestamp when answering period ends"
+        },
+        "openEpoch": {
+          "type": "string",
+          "description": "Random epoch identifier when buzz window was opened"
+        },
+        "rebound": {
+          "type": "boolean",
+          "description": "Whether current attempt is a rebound throw worth 5 points"
+        },
+        "tried": {
+          "type": "array",
+          "description": "List of group IDs that have attempted this question"
+        },
+        "groups": {
+          "type": "array",
+          "description": "Array of eight groups with PINs and scores"
+        },
+        "current": {
+          "type": "object",
+          "description": "Current answering group and respondent attempt state"
+        },
+        "history": {
+          "type": "array",
+          "description": "History of judged question attempts"
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Timestamp of last room modification"
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Timestamp when room was created"
+        }
+      },
+      "required": ["code", "phase", "qIndex", "groups", "createdAt", "updatedAt"]
+    },
+    "Submission": {
+      "title": "Submission",
+      "description": "Student work submission including LKPD, quiz results, and final letter draft.",
+      "type": "object",
+      "properties": {
+        "studentName": {
+          "type": "string",
+          "description": "Full student name",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "className": {
+          "type": "string",
+          "description": "Class identifier",
+          "maxLength": 50
+        },
+        "groupId": {
+          "type": "string",
+          "description": "Assigned group number",
+          "maxLength": 10
+        },
+        "kind": {
+          "type": "string",
+          "description": "Type of submission",
+          "enum": ["lkpd", "quiz", "final", "backup"]
+        },
+        "answers": {
+          "type": "object",
+          "description": "LKPD responses mapping question keys to answers"
+        },
+        "quizScore": {
+          "type": "number",
+          "description": "Quiz score between 0 and 100"
+        },
+        "letter": {
+          "type": "string",
+          "description": "Application letter content",
+          "maxLength": 10000
+        },
+        "arcade": {
+          "type": "object",
+          "description": "Arcade summary progress and XP"
+        },
+        "submittedAt": {
+          "type": "number",
+          "description": "Submission epoch timestamp"
+        }
+      },
+      "required": ["studentName", "className", "kind", "submittedAt"]
+    },
+    "TeacherConfig": {
+      "title": "TeacherConfig",
+      "description": "Teacher dashboard security passkey and classroom settings.",
+      "type": "object",
+      "properties": {
+        "passHash": {
+          "type": "string",
+          "description": "Hashed teacher security passkey",
+          "maxLength": 128
+        },
+        "teacherName": {
+          "type": "string",
+          "description": "Teacher display name",
+          "maxLength": 100
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Timestamp of last update"
+        }
+      },
+      "required": ["passHash", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/battle_rooms/{roomId}": {
+      "schema": "BattleRoom",
+      "description": "Live classroom battle rooms orchestrated by teacher and played by groups"
+    },
+    "/submissions/{submissionId}": {
+      "schema": "Submission",
+      "description": "Student LKPD, quiz, and application letter assignments"
+    },
+    "/settings/{configId}": {
+      "schema": "TeacherConfig",
+      "description": "Classroom teacher configuration and security credentials"
+    }
+  }
+}

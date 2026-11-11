@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#113d3e">
+  <meta name="description" content="Application Letter Lab. Ruang belajar interaktif Bahasa Inggris XI TAV SMK PGRI 1 Nganjuk dengan Classroom Battle dan Panel Guru.">
+  <title>Prism Studio V6 Classroom Battle | Application Letter Lab</title>
+  <link rel="icon" href="/assets/studio.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/liquid.css">
+  <link rel="stylesheet" href="/prism.css">
+  <link rel="stylesheet" href="/battle.css">
+  <script defer src="/content.js"></script>
+  <script defer src="/arcade.js"></script>
+  <script defer src="/prism.js"></script>
+</head>
+<body data-build="V6-TAV-ELECTRONICS-20261111" data-scene="coast">
+  <a class="skip" href="#main">Lewati ke isi</a>
+  <header class="studio-header">
+    <a class="brand" href="#home">
+      <span class="brandmark" aria-hidden="true">
+        <svg viewBox="0 0 36 36" fill="none"><path d="M18 4 32 29H4L18 4Z" stroke="currentColor" stroke-width="1.3"/><path d="m18 4 5 25M18 4l-5 25M7 23h22" stroke="currentColor" stroke-width=".7" opacity=".65"/></svg>
+      </span>
+      <span>Application Letter Lab<small>PRISM STUDIO <b>·</b> XI TAV</small></span>
+    </a>
+    <div class="header-tools">
+      <div class="header-progress">
+        <span id="progress-text">0/8</span>
+        <progress id="learning-progress" max="8" value="0" aria-label="Progres belajar"></progress>
+      </div>
+      <button class="appearance-toggle" id="appearance-open" aria-label="Tampilan" aria-haspopup="dialog" aria-controls="appearance-dialog" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m12 3 2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2Z"/></svg>
+        <span>Tampilan</span>
+      </button>
+    </div>
+  </header>
+  <div class="shell"><main id="main" tabindex="-1"></main></div>
+  <nav id="navigation" class="studio-dock" aria-label="Navigasi utama"></nav>
+  <button id="menu-toggle" class="hidden" aria-hidden="true" tabindex="-1"></button>
+  <dialog id="appearance-dialog" class="appearance-dialog" aria-labelledby="appearance-title">
+    <div class="dialog-top">
+      <span class="eyebrow">YOUR SPACE, YOUR MOOD</span>
+      <button id="appearance-close" class="icon-button" aria-label="Tutup pengaturan tampilan">×</button>
+    </div>
+    <h2 id="appearance-title">Make it yours.</h2>
+    <p>Pilih suasana belajarmu.</p>
+    <div class="scene-pickers" role="group" aria-label="Pilih latar">
+      <button data-scene-picker="coast" aria-pressed="true"><span class="scene-thumb coast-thumb"></span>Coast</button>
+      <button data-scene-picker="prism" aria-pressed="false"><span class="scene-thumb prism-thumb"></span>Prism</button>
+      <button data-scene-picker="noir" aria-pressed="false"><span class="scene-thumb noir-thumb"></span>Noir</button>
+    </div>
+    <label for="glass-clarity">Kejernihan kaca <output id="clarity-value">60%</output></label>
+    <input id="glass-clarity" type="range" min="0" max="100" value="60">
+    <label for="glass-chroma">Kilau chromatic <output id="chroma-value">65%</output></label>
+    <input id="glass-chroma" type="range" min="0" max="100" value="65">
+    <button id="motion-toggle" class="motion-toggle" aria-pressed="true"><span class="switch-dot"></span>Gerak lembut <span id="motion-label">aktif</span></button>
+    <p class="dialog-note">Pilihan tampilan tersimpan pada browser ini.</p>
+  </dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <footer>
+    <span>SMK PGRI 1 Nganjuk · Mutiara Elva Ardhani</span>
+    <span>Application Letter · Prism Studio V6 Classroom Battle</span>
+  </footer>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

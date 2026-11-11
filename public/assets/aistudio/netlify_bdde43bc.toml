@@ -1,0 +1,3 @@
+[build]
+  publish = "."
+# Tidak ada build, functions, database, atau paket berbayar.
